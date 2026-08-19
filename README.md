@@ -1,4 +1,11 @@
-# vinext-starter
+# Kindred Code
+
+Find developers with similar interests through public GitHub activity.
+
+- [Try Kindred Code](https://kindred-code-srbmaury.srbmaury.chatgpt.site)
+- Created by [@srbmaury](https://github.com/srbmaury)
+
+## Development
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and

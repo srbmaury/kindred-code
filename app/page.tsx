@@ -43,7 +43,6 @@ export default function Home() {
       <form onSubmit={findPeople}>
         <label htmlFor="username">GitHub username</label>
         <div className="search-row"><div className="input-wrap"><span>@</span><input id="username" value={username} onChange={e=>setUsername(e.target.value)} placeholder="your-username" autoComplete="off"/></div><button disabled={loading}>{loading?"Connecting…":"Find my people"}<span>↗</span></button></div>
-        <p className="privacy-note">No token needed — searches are securely handled by the Kindred Code backend.</p>
         {error&&<p className="error" role="alert">{error}</p>}
       </form>
     </section>
@@ -56,6 +55,6 @@ export default function Home() {
       </article>)}</div>
     </section>
     <section className="how" id="how"><p className="kicker">SIGNALS, NOT SURVEILLANCE</p><h2>Built from public work.</h2><div><p><strong>01</strong>We read public starred and owned repositories.</p><p><strong>02</strong>We find nearby contributors, then compare languages and topics.</p><p><strong>03</strong>You get explainable matches—not a mysterious black box.</p></div></section>
-    <footer><span>Kindred Code</span><p>A playful prototype powered by public GitHub activity.</p></footer>
+    <footer><span>Kindred Code</span><p>A playful prototype by <a href="https://github.com/srbmaury" target="_blank" rel="noreferrer">@srbmaury ↗</a></p></footer>
   </main>;
 }
