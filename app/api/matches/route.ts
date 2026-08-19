@@ -57,14 +57,22 @@ export async function POST(request: Request) {
     const count = await enforceRateLimit(request); if (count > SEARCHES_PER_HOUR) return Response.json({ error: "Search limit reached. Try again next hour." }, { status: 429, headers: { "Retry-After": "3600" } });
     const body = await request.json() as { username?: string }, handle = (body.username || "").trim().replace(/^@/, "");
     if (!/^[a-z\d](?:[a-z\d-]{0,37}[a-z\d])?$/i.test(handle)) return Response.json({ error: "Enter a valid GitHub username." }, { status: 400 });
-    const cacheKey = `kindred:matches:v2:${handle.toLowerCase()}`, cached = await getCached(cacheKey); if (cached) return Response.json(cached, { headers: { "X-Kindred-Cache": "HIT" } });
+    const cacheKey = `kindred:matches:v3:${handle.toLowerCase()}`, cached = await getCached(cacheKey); if (cached) return Response.json(cached, { headers: { "X-Kindred-Cache": "HIT" } });
     const plan = fanoutFor(await readSharedBudget().catch(() => latestBudget));
     const [profile, starred, owned] = await Promise.all([github<User>(`/users/${handle}`), github<Repo[]>(`/users/${handle}/starred?per_page=20`), github<Repo[]>(`/users/${handle}/repos?sort=updated&per_page=20`)]);
     const sources = [...starred.slice(0, Math.max(1, plan.sourceCount - 2)), ...owned.slice(0, Math.min(2, plan.sourceCount))].slice(0, plan.sourceCount), myLanguages = unique([...starred, ...owned].map(repo => repo.language)), myTopics = unique([...starred, ...owned].flatMap(repo => repo.topics || []));
     const contributorLists: { login: string }[][] = []; for (const repo of sources) contributorLists.push(await github<{ login: string }[]>(`/repos/${repo.full_name}/contributors?per_page=5`).catch(() => []));
+    const sharedReposByLogin = new Map<string,string[]>(); contributorLists.forEach((people,index) => people.forEach(person => { const key=person.login.toLowerCase(); if(key===handle.toLowerCase())return; sharedReposByLogin.set(key,unique([...(sharedReposByLogin.get(key)||[]),sources[index].full_name])); }));
     const logins = unique(contributorLists.flat().map(person => person.login)).filter(login => login.toLowerCase() !== handle.toLowerCase()).slice(0, plan.candidateCount), matches = [];
-    for (const login of logins) { const [person, repos] = await Promise.all([github<User>(`/users/${login}`), github<Repo[]>(`/users/${login}/repos?sort=updated&per_page=20`)]); const languages = unique(repos.map(repo => repo.language)), topics = unique(repos.flatMap(repo => repo.topics || [])), sharedLanguages = myLanguages.filter(item => languages.includes(item)), sharedTopics = myTopics.filter(item => topics.includes(item)); matches.push({ login: person.login, name: person.name, avatar_url: person.avatar_url, html_url: person.html_url, bio: person.bio, location: person.location, sharedLanguages, sharedTopics, score: Math.min(99, 38 + sharedLanguages.length * 10 + sharedTopics.length * 7) }); }
-    const data = { profileName: profile.name || `@${profile.login}`, matches: matches.sort((a, b) => b.score - a.score).slice(0, 6), meta: { fanout: plan.mode, cachedForSeconds: CACHE_SECONDS } };
+    for (const login of logins) {
+      const [person, repos] = await Promise.all([github<User>(`/users/${login}`), github<Repo[]>(`/users/${login}/repos?sort=updated&per_page=20`)]);
+      const languages = unique(repos.map(repo => repo.language)), topics = unique(repos.flatMap(repo => repo.topics || [])), sharedLanguages = myLanguages.filter(item => languages.includes(item)), sharedTopics = myTopics.filter(item => topics.includes(item)), sharedRepos=sharedReposByLogin.get(login.toLowerCase())||[];
+      const languageRatio=sharedLanguages.length/Math.max(1,Math.min(myLanguages.length,languages.length,5)), topicRatio=sharedTopics.length/Math.max(1,Math.min(myTopics.length,topics.length,5)), repoRatio=Math.min(1,sharedRepos.length/2);
+      const scoreBreakdown={repositories:Math.round(45*repoRatio),languages:Math.round(35*Math.min(1,languageRatio)),topics:Math.round(20*Math.min(1,topicRatio))};
+      const score=Math.max(1,Math.min(99,scoreBreakdown.repositories+scoreBreakdown.languages+scoreBreakdown.topics));
+      matches.push({ login: person.login, name: person.name, avatar_url: person.avatar_url, html_url: person.html_url, bio: person.bio, location: person.location, sharedLanguages, sharedTopics, sharedRepos, scoreBreakdown, score });
+    }
+    const data = { profileName: profile.name || `@${profile.login}`, profileLogin:profile.login, matches: matches.filter(match=>match.score>=20).sort((a, b) => b.score - a.score).slice(0, 6), meta: { fanout: plan.mode, cachedForSeconds: CACHE_SECONDS, scoreWeights:{repositories:45,languages:35,topics:20} } };
     await Promise.all([setCached(cacheKey, data), saveSharedBudget()]);
     return Response.json(data, { headers: { "X-Kindred-Cache": "MISS", "X-GitHub-RateLimit-Remaining": String(latestBudget?.remaining ?? "unknown") } });
   } catch (error) { const message = error instanceof Error ? error.message : "Something went wrong."; return Response.json({ error: message }, { status: message.includes("not found") ? 404 : 500 }); }
